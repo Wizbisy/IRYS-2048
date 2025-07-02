@@ -37,6 +37,7 @@ export default function Home() {
   const [dark, setDark] = useState(true);
   const { address, isConnected } = useAccount();
 
+  /* ── Board setup ── */
   const initBoard = useCallback(() => {
     const start: Tile[] = [];
     for (let i = 0; i < INITIAL; i++) start.push(addRandom(start));
@@ -46,17 +47,21 @@ export default function Home() {
     setWon(false);
   }, []);
 
+  /* ── Run once on mount ── */
   useEffect(() => {
     initBoard();
+
     const onKey = (e: KeyboardEvent) => {
       if (gameOver || won) return;
       let moved = false;
       let sc = score;
       let t = [...tiles];
+
       if (e.key === "ArrowUp") [t, moved, sc] = move(t, "up");
       else if (e.key === "ArrowDown") [t, moved, sc] = move(t, "down");
       else if (e.key === "ArrowLeft") [t, moved, sc] = move(t, "left");
       else if (e.key === "ArrowRight") [t, moved, sc] = move(t, "right");
+
       if (moved) {
         t = [...t, addRandom(t)];
         setTiles(t);
@@ -68,10 +73,12 @@ export default function Home() {
         }
       }
     };
+
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tiles, score, gameOver, won, initBoard]);
+  }, []);                                           // <-- empty deps ensures one‑time run
 
+  /* ── Helpers ── */
   const addRandom = (current: Tile[]): Tile => {
     const free: { x: number; y: number }[] = [];
     for (let y = 0; y < GRID; y++)
@@ -165,6 +172,7 @@ export default function Home() {
     return false;
   };
 
+  /* ── Upload score to IRYS ── */
   const uploadScore = async () => {
     if (!isConnected || !address || !window.ethereum) {
       toast.error("Connect wallet first");
@@ -179,26 +187,11 @@ export default function Home() {
       );
       await uploader.upload(
         JSON.stringify({ address, score, timestamp: Date.now() }),
-        {
-          tags: [
-            { name: "App", value: "IRYS-2048" },
-            { name: "Type", value: "Score" },
-          ],
-        }
+        { tags: [{ name: "App", value: "IRYS-2048" }, { name: "Type", value: "Score" }] }
       );
-      toast.update(id, {
-        render: "Score uploaded!",
-        type: "success",
-        isLoading: false,
-        autoClose: 3000,
-      });
+      toast.update(id, { render: "Score uploaded!", type: "success", isLoading: false, autoClose: 3000 });
     } catch (err) {
-      toast.update(id, {
-        render: "Upload failed",
-        type: "error",
-        isLoading: false,
-        autoClose: 3000,
-      });
+      toast.update(id, { render: "Upload failed", type: "error", isLoading: false, autoClose: 3000 });
       console.error(err);
     }
   };
@@ -222,7 +215,7 @@ export default function Home() {
         {!gameOver ? (
           <motion.div
             key="board"
-            className="relative w-full max-w-md aspect-square bg-gray-800 rounded-2xl p-4"
+            className="relative w-full max-w-md aspect-square bg-gray-800 rounded-2xl p-4 overflow-hidden"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
