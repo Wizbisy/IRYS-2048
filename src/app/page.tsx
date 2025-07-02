@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSwipeable } from "react-swipeable";
 import { useAccount } from "wagmi";
 import { BrowserProvider } from "ethers";
 import { WebUploader } from "@irys/web-upload";
@@ -19,17 +20,33 @@ declare global {
   }
 }
 
-const GRID = 4;
-const INITIAL = 2;
+const SIZE = 4;
+const START_TILES = 2;
 
 interface Tile {
   id: number;
   value: number;
   x: number;
   y: number;
+  merged: boolean;
 }
 
+const tileColors: Record<number, string> = {
+  2: "bg-[#eee4da] text-[#776e65]",
+  4: "bg-[#ede0c8] text-[#776e65]",
+  8: "bg-[#f2b179] text-white",
+  16: "bg-[#f59563] text-white",
+  32: "bg-[#f67c5f] text-white",
+  64: "bg-[#f65e3b] text-white",
+  128: "bg-[#edcf72] text-white",
+  256: "bg-[#edcc61] text-white",
+  512: "bg-[#edc850] text-white",
+  1024: "bg-[#edc53f] text-white",
+  2048: "bg-[#edc22e] text-white",
+};
+
 export default function Home() {
+  /* ───────── state ───────── */
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
@@ -37,148 +54,145 @@ export default function Home() {
   const [dark, setDark] = useState(true);
   const { address, isConnected } = useAccount();
 
-  /* ── Board setup ── */
+  /* ───────── helpers ───────── */
+  const emptyGrid = () => Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+
   const initBoard = useCallback(() => {
-    const start: Tile[] = [];
-    for (let i = 0; i < INITIAL; i++) start.push(addRandom(start));
-    setTiles(start);
+    const grid = emptyGrid();
+    const initial: Tile[] = [];
+    for (let i = 0; i < START_TILES; i++) {
+      addRandomTileToGrid(grid, initial);
+    }
+    setTiles(initial);
     setScore(0);
-    setGameOver(false);
     setWon(false);
+    setGameOver(false);
   }, []);
 
-  /* ── Run once on mount ── */
-  useEffect(() => {
-    initBoard();
-
-    const onKey = (e: KeyboardEvent) => {
-      if (gameOver || won) return;
-      let moved = false;
-      let sc = score;
-      let t = [...tiles];
-
-      if (e.key === "ArrowUp") [t, moved, sc] = move(t, "up");
-      else if (e.key === "ArrowDown") [t, moved, sc] = move(t, "down");
-      else if (e.key === "ArrowLeft") [t, moved, sc] = move(t, "left");
-      else if (e.key === "ArrowRight") [t, moved, sc] = move(t, "right");
-
-      if (moved) {
-        t = [...t, addRandom(t)];
-        setTiles(t);
-        setScore(sc);
-        if (!canMove(t)) setGameOver(true);
-        if (t.some(v => v.value === 2048) && !won) {
-          setWon(true);
-          confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
-        }
-      }
-    };
-
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);                                           // <-- empty deps ensures one‑time run
-
-  /* ── Helpers ── */
-  const addRandom = (current: Tile[]): Tile => {
+  /* ───────── board utils ───────── */
+  const addRandomTileToGrid = (grid: number[][], list: Tile[]) => {
     const free: { x: number; y: number }[] = [];
-    for (let y = 0; y < GRID; y++)
-      for (let x = 0; x < GRID; x++)
-        if (!current.some(t => t.x === x && t.y === y)) free.push({ x, y });
+    grid.forEach((row, y) =>
+      row.forEach((v, x) => {
+        if (v === 0) free.push({ x, y });
+      })
+    );
+    if (free.length === 0) return;
     const { x, y } = free[Math.floor(Math.random() * free.length)];
-    return { id: Date.now() + Math.random(), value: Math.random() < 0.9 ? 2 : 4, x, y };
+    const value = Math.random() < 0.9 ? 2 : 4;
+    grid[y][x] = value;
+    list.push({ id: Date.now() + Math.random(), value, x, y, merged: false });
   };
 
-  const move = (
-    ts: Tile[],
-    dir: "up" | "down" | "left" | "right"
-  ): [Tile[], boolean, number] => {
-    let moved = false;
-    let sc = score;
-    const newTs = [...ts];
-    const sorted = [...ts].sort((a, b) => {
-      if (dir === "up") return a.y - b.y;
-      if (dir === "down") return b.y - a.y;
-      if (dir === "left") return a.x - b.x;
-      return b.x - a.x;
+  const gridFromTiles = (list: Tile[]) => {
+    const g = emptyGrid();
+    list.forEach((t) => {
+      g[t.y][t.x] = t.value;
     });
-    const merged: number[] = [];
-    for (let i = 0; i < GRID; i++) {
-      let line =
-        dir === "up" || dir === "down"
-          ? sorted.filter(v => v.x === i)
-          : sorted.filter(v => v.y === i);
-      if (dir === "down" || dir === "right") line = [...line].reverse();
-      let nl: Tile[] = [];
-      let pos = 0;
-      for (let j = 0; j < line.length; j++) {
-        if (
-          j < line.length - 1 &&
-          line[j].value === line[j + 1].value &&
-          !merged.includes(line[j].id) &&
-          !merged.includes(line[j + 1].id)
-        ) {
-          const v = line[j].value * 2;
-          nl.push({
-            ...line[j],
-            value: v,
-            x: dir === "up" || dir === "down" ? i : pos,
-            y: dir === "left" || dir === "right" ? i : pos,
-          });
-          merged.push(line[j].id, line[j + 1].id);
-          sc += v;
-          j++;
-          pos++;
-          moved = true;
-        } else {
-          nl.push({
-            ...line[j],
-            x: dir === "up" || dir === "down" ? i : pos,
-            y: dir === "left" || dir === "right" ? i : pos,
-          });
-          if (
-            (dir === "up" && line[j].y !== pos - 1) ||
-            (dir === "down" && line[j].y !== GRID - pos) ||
-            (dir === "left" && line[j].x !== pos - 1) ||
-            (dir === "right" && line[j].x !== GRID - pos)
-          )
-            moved = true;
-          pos++;
-        }
-      }
-      nl.forEach(v => {
-        const idx = newTs.findIndex(o => o.id === v.id);
-        if (idx !== -1) newTs[idx] = v;
-      });
-    }
-    return [newTs, moved, sc];
+    return g;
   };
 
-  const canMove = (ts: Tile[]): boolean => {
-    if (ts.length < GRID * GRID) return true;
-    for (const t of ts) {
-      const nb = [
-        { x: t.x + 1, y: t.y },
-        { x: t.x - 1, y: t.y },
-        { x: t.x, y: t.y + 1 },
-        { x: t.x, y: t.y - 1 },
-      ];
-      for (const { x, y } of nb) {
-        if (x >= 0 && x < GRID && y >= 0 && y < GRID) {
-          const n = ts.find(v => v.x === x && v.y === y);
-          if (!n || n.value === t.value) return true;
+  /* ───────── move logic ───────── */
+  const slide = (grid: number[][], dir: "up" | "down" | "left" | "right") => {
+    const rotate = (g: number[][]) => g[0].map((_, i) => g.map((row) => row[i])).reverse();
+
+    const times =
+      dir === "up" ? 0 : dir === "right" ? 1 : dir === "down" ? 2 : 3;
+    let working = structuredClone(grid);
+    for (let r = 0; r < times; r++) working = rotate(working);
+
+    let moved = false;
+    let add = 0;
+    for (let y = 0; y < SIZE; y++) {
+      const row = working[y].filter((v) => v !== 0);
+      for (let x = 0; x < row.length - 1; x++) {
+        if (row[x] === row[x + 1]) {
+          row[x] *= 2;
+          add += row[x];
+          row.splice(x + 1, 1);
+          moved = true;
         }
       }
+      while (row.length < SIZE) row.push(0);
+      if (!working[y].every((v, i) => v === row[i])) moved = true;
+      working[y] = row;
     }
+
+    for (let r = 0; r < (4 - times) % 4; r++) working = rotate(working);
+
+    return { grid: working, moved, add };
+  };
+
+  const anyMovesLeft = (g: number[][]) => {
+    for (let y = 0; y < SIZE; y++)
+      for (let x = 0; x < SIZE; x++) {
+        if (g[y][x] === 0) return true;
+        const val = g[y][x];
+        if (
+          (x < SIZE - 1 && g[y][x + 1] === val) ||
+          (y < SIZE - 1 && g[y + 1][x] === val)
+        )
+          return true;
+      }
     return false;
   };
 
-  /* ── Upload score to IRYS ── */
+  /* ───────── handle move ───────── */
+  const handleMove = (dir: "up" | "down" | "left" | "right") => {
+    const grid = gridFromTiles(tiles);
+    const { grid: nGrid, moved, add } = slide(grid, dir);
+    if (!moved) return;
+
+    const newTiles: Tile[] = [];
+    nGrid.forEach((row, y) =>
+      row.forEach((v, x) => {
+        if (v !== 0) newTiles.push({ id: Date.now() + Math.random(), value: v, x, y, merged: false });
+      })
+    );
+
+    addRandomTileToGrid(nGrid, newTiles);
+    setTiles(newTiles);
+    setScore((s) => s + add);
+    if (newTiles.some((t) => t.value === 2048) && !won) {
+      setWon(true);
+      confetti({ particleCount: 200, spread: 100, origin: { y: 0.6 } });
+    }
+    if (!anyMovesLeft(nGrid)) setGameOver(true);
+  };
+
+  /* ───────── key + swipe listeners ───────── */
+  useEffect(() => {
+    initBoard();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (gameOver) return;
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key))
+        e.preventDefault();
+      if (e.key === "ArrowUp") handleMove("up");
+      if (e.key === "ArrowDown") handleMove("down");
+      if (e.key === "ArrowLeft") handleMove("left");
+      if (e.key === "ArrowRight") handleMove("right");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const swipe = useSwipeable({
+    onSwipedUp: () => handleMove("up"),
+    onSwipedDown: () => handleMove("down"),
+    onSwipedLeft: () => handleMove("left"),
+    onSwipedRight: () => handleMove("right"),
+    trackTouch: true,
+  });
+
+  /* ───────── upload to IRYS ───────── */
   const uploadScore = async () => {
     if (!isConnected || !address || !window.ethereum) {
       toast.error("Connect wallet first");
       return;
     }
-
     const id = toast.loading("Uploading…");
     try {
       const provider = new BrowserProvider(window.ethereum);
@@ -189,39 +203,41 @@ export default function Home() {
         JSON.stringify({ address, score, timestamp: Date.now() }),
         { tags: [{ name: "App", value: "IRYS-2048" }, { name: "Type", value: "Score" }] }
       );
-      toast.update(id, { render: "Score uploaded!", type: "success", isLoading: false, autoClose: 3000 });
+      toast.update(id, { render: "Score uploaded", type: "success", isLoading: false, autoClose: 3000 });
     } catch (err) {
       toast.update(id, { render: "Upload failed", type: "error", isLoading: false, autoClose: 3000 });
       console.error(err);
     }
   };
 
+  /* ───────── render ───────── */
   return (
     <div
-      className={`relative min-h-screen w-full flex flex-col items-center justify-center p-4 transition-colors duration-300 ${
-        dark ? "bg-gray-900" : "bg-white"
+      className={`relative min-h-screen w-full flex flex-col items-center justify-center p-4 transition-colors ${
+        dark ? "bg-gray-900" : "bg-gray-50"
       }`}
     >
       <button
         onClick={() => setDark(!dark)}
         className="absolute top-4 left-4 bg-gray-600 text-white px-3 py-1 rounded text-sm shadow"
       >
-        {dark ? "Light Mode" : "Dark Mode"}
+        {dark ? "Light Mode" : "Dark Mode"}
       </button>
 
-      <Image src="/logo.png" alt="logo" width={200} height={50} className="mb-8" />
+      <Image src="/logo.png" alt="logo" width={200} height={50} className="mb-6" />
 
       <AnimatePresence>
         {!gameOver ? (
           <motion.div
             key="board"
+            {...swipe}
             className="relative w-full max-w-md aspect-square bg-gray-800 rounded-2xl p-4 overflow-hidden"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.4 }}
           >
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white select-none">
               Score: {score}
             </div>
 
@@ -229,25 +245,29 @@ export default function Home() {
               Leaderboard
             </Link>
 
+            {/* board grid */}
             <div className="grid grid-cols-4 gap-2 w-full h-full">
-              {Array.from({ length: GRID * GRID }).map((_, i) => (
-                <div key={i} className="bg-gray-700 rounded" style={{ aspectRatio: "1/1" }} />
+              {Array.from({ length: SIZE * SIZE }).map((_, i) => (
+                <div key={i} className="bg-gray-700 rounded-lg" style={{ aspectRatio: "1/1" }} />
               ))}
-              {tiles.map(tile => (
+
+              {tiles.map((t) => (
                 <motion.div
-                  key={tile.id}
-                  className="absolute bg-gray-600 rounded flex items-center justify-center text-white font-bold text-2xl"
+                  key={t.id}
+                  className={`absolute rounded-lg flex items-center justify-center font-bold text-xl ${
+                    tileColors[t.value] || "bg-gray-500 text-white"
+                  }`}
                   style={{
-                    width: `${100 / GRID}%`,
-                    height: `${100 / GRID}%`,
-                    left: `${(tile.x * 100) / GRID}%`,
-                    top: `${(tile.y * 100) / GRID}%`,
+                    width: `${100 / SIZE}%`,
+                    height: `${100 / SIZE}%`,
+                    left: `${(t.x * 100) / SIZE}%`,
+                    top: `${(t.y * 100) / SIZE}%`,
                   }}
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  transition={{ duration: 0.25 }}
+                  transition={{ duration: 0.2 }}
                 >
-                  {tile.value}
+                  {t.value}
                 </motion.div>
               ))}
             </div>
@@ -259,10 +279,10 @@ export default function Home() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.4 }}
           >
             <h2 className="text-2xl text-white">Game Over!</h2>
-            <p className="text-xl text-white">Score: {score}</p>
+            <p className="text-lg text-white">Score: {score}</p>
             <button
               onClick={uploadScore}
               className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-2xl shadow"
@@ -278,9 +298,8 @@ export default function Home() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      <Image src="/sprite.png" alt="sprite" width={100} height={100} className="absolute bottom-0 left-0" />
-      <Image src="/sprite.png" alt="sprite" width={100} height={100} className="absolute bottom-0 right-0 scale-x-[-1]" />
+      <Image src="/sprite.png" alt="sprite" width={90} height={90} className="absolute bottom-0 left-0" />
+      <Image src="/sprite.png" alt="sprite" width={90} height={90} className="absolute bottom-0 right-0 scale-x-[-1]" />
     </div>
   );
 }
