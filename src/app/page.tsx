@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAccount, useWalletClient } from "wagmi";
-import { Uploader, IrysClient } from "@irys/upload";
-import { Ethereum } from "@irys/upload-ethereum";
+import { WebUploader } from "@irys/web-upload";
+import { WebEthereum } from "@irys/web-upload-ethereum";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "react-toastify";
@@ -66,7 +66,7 @@ export default function Home() {
         }
         if (newTiles.some((tile) => tile.value === 2048) && !won) {
           setWon(true);
-          // Trigger confetti here if desired
+          // Trigger confetti here if desired (e.g., import confetti and call it)
         }
       }
     };
@@ -192,24 +192,17 @@ export default function Home() {
     }
 
     try {
-      const irysUploader = await Uploader(Ethereum).withWallet(
-        walletClient.account.privateKey
+      const provider = walletClient.transport;
+      const uploader = await WebUploader(WebEthereum).withProvider(provider);
+      await uploader.upload(
+        JSON.stringify({ address, score, timestamp: Date.now() }),
+        {
+          tags: [
+            { name: "App", value: "IRYS-2048" },
+            { name: "Type", value: "Score" },
+          ],
+        }
       );
-      const irys = await irysUploader.withRpc(process.env.NEXT_PUBLIC_IRYS_NODE);
-
-      const scoreObj = {
-        address,
-        score,
-        timestamp: Date.now(),
-      };
-
-      await irys.upload(JSON.stringify(scoreObj), {
-        tags: [
-          { name: "App", value: "IRYS-2048" },
-          { name: "Type", value: "Score" },
-        ],
-      });
-
       toast.success("Score uploaded!");
     } catch (error) {
       toast.error("Failed to upload score");
