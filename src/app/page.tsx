@@ -2,304 +2,320 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useSwipeable } from "react-swipeable";
-import { useAccount } from "wagmi";
-import { BrowserProvider } from "ethers";
-import { WebUploader } from "@irys/web-upload";
-import { WebEthereum } from "@irys/web-upload-ethereum";
-import { EthersV6Adapter } from "@irys/web-upload-ethereum-ethers-v6";
+import { useAccount, useWalletClient } from "wagmi";
+import { Uploader, IrysClient } from "@irys/upload";
+import { Ethereum } from "@irys/upload-ethereum";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "react-toastify";
-import confetti from "canvas-confetti";
 import "react-toastify/dist/ReactToastify.css";
 
-declare global {
-  interface Window {
-    ethereum?: any;
-  }
-}
-
-const SIZE = 4;
-const START_TILES = 2;
+const GRID_SIZE = 4;
+const INITIAL_TILES = 2;
 
 interface Tile {
   id: number;
   value: number;
   x: number;
   y: number;
-  merged: boolean;
 }
 
-const tileColors: Record<number, string> = {
-  2: "bg-[#eee4da] text-[#776e65]",
-  4: "bg-[#ede0c8] text-[#776e65]",
-  8: "bg-[#f2b179] text-white",
-  16: "bg-[#f59563] text-white",
-  32: "bg-[#f67c5f] text-white",
-  64: "bg-[#f65e3b] text-white",
-  128: "bg-[#edcf72] text-white",
-  256: "bg-[#edcc61] text-white",
-  512: "bg-[#edc850] text-white",
-  1024: "bg-[#edc53f] text-white",
-  2048: "bg-[#edc22e] text-white",
-};
-
 export default function Home() {
-  /* ───────── state ───────── */
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [won, setWon] = useState(false);
-  const [dark, setDark] = useState(true);
-  const { address, isConnected } = useAccount();
+  const { address } = useAccount();
+  const { data: walletClient } = useWalletClient();
 
-  /* ───────── helpers ───────── */
-  const emptyGrid = () => Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
-
-  const initBoard = useCallback(() => {
-    const grid = emptyGrid();
-    const initial: Tile[] = [];
-    for (let i = 0; i < START_TILES; i++) {
-      addRandomTileToGrid(grid, initial);
+  const initializeBoard = useCallback(() => {
+    const newTiles: Tile[] = [];
+    for (let i = 0; i < INITIAL_TILES; i++) {
+      newTiles.push(addRandomTile(newTiles));
     }
-    setTiles(initial);
+    setTiles(newTiles);
     setScore(0);
-    setWon(false);
     setGameOver(false);
+    setWon(false);
   }, []);
 
-  /* ───────── board utils ───────── */
-  const addRandomTileToGrid = (grid: number[][], list: Tile[]) => {
-    const free: { x: number; y: number }[] = [];
-    grid.forEach((row, y) =>
-      row.forEach((v, x) => {
-        if (v === 0) free.push({ x, y });
-      })
-    );
-    if (free.length === 0) return;
-    const { x, y } = free[Math.floor(Math.random() * free.length)];
-    const value = Math.random() < 0.9 ? 2 : 4;
-    grid[y][x] = value;
-    list.push({ id: Date.now() + Math.random(), value, x, y, merged: false });
-  };
+  useEffect(() => {
+    initializeBoard();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (gameOver || won) return;
+      let moved = false;
+      let newScore = score;
+      let newTiles = [...tiles];
 
-  const gridFromTiles = (list: Tile[]) => {
-    const g = emptyGrid();
-    list.forEach((t) => {
-      g[t.y][t.x] = t.value;
-    });
-    return g;
-  };
+      if (e.key === "ArrowUp") {
+        [newTiles, moved, newScore] = moveTiles(newTiles, "up");
+      } else if (e.key === "ArrowDown") {
+        [newTiles, moved, newScore] = moveTiles(newTiles, "down");
+      } else if (e.key === "ArrowLeft") {
+        [newTiles, moved, newScore] = moveTiles(newTiles, "left");
+      } else if (e.key === "ArrowRight") {
+        [newTiles, moved, newScore] = moveTiles(newTiles, "right");
+      }
 
-  /* ───────── move logic ───────── */
-  const slide = (grid: number[][], dir: "up" | "down" | "left" | "right") => {
-    const rotate = (g: number[][]) => g[0].map((_, i) => g.map((row) => row[i])).reverse();
-
-    const times =
-      dir === "up" ? 0 : dir === "right" ? 1 : dir === "down" ? 2 : 3;
-    let working = structuredClone(grid);
-    for (let r = 0; r < times; r++) working = rotate(working);
-
-    let moved = false;
-    let add = 0;
-    for (let y = 0; y < SIZE; y++) {
-      const row = working[y].filter((v) => v !== 0);
-      for (let x = 0; x < row.length - 1; x++) {
-        if (row[x] === row[x + 1]) {
-          row[x] *= 2;
-          add += row[x];
-          row.splice(x + 1, 1);
-          moved = true;
+      if (moved) {
+        newTiles = [...newTiles, addRandomTile(newTiles)];
+        setTiles(newTiles);
+        setScore(newScore);
+        if (!canMove(newTiles)) {
+          setGameOver(true);
+        }
+        if (newTiles.some((tile) => tile.value === 2048) && !won) {
+          setWon(true);
+          // Trigger confetti here if desired
         }
       }
-      while (row.length < SIZE) row.push(0);
-      if (!working[y].every((v, i) => v === row[i])) moved = true;
-      working[y] = row;
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [tiles, score, gameOver, won, initializeBoard]);
+
+  const addRandomTile = (currentTiles: Tile[]): Tile => {
+    const available: { x: number; y: number }[] = [];
+    for (let y = 0; y < GRID_SIZE; y++) {
+      for (let x = 0; x < GRID_SIZE; x++) {
+        if (!currentTiles.some((tile) => tile.x === x && tile.y === y)) {
+          available.push({ x, y });
+        }
+      }
     }
-
-    for (let r = 0; r < (4 - times) % 4; r++) working = rotate(working);
-
-    return { grid: working, moved, add };
+    const { x, y } = available[Math.floor(Math.random() * available.length)];
+    return {
+      id: Date.now() + Math.random(),
+      value: Math.random() < 0.9 ? 2 : 4,
+      x,
+      y,
+    };
   };
 
-  const anyMovesLeft = (g: number[][]) => {
-    for (let y = 0; y < SIZE; y++)
-      for (let x = 0; x < SIZE; x++) {
-        if (g[y][x] === 0) return true;
-        const val = g[y][x];
-        if (
-          (x < SIZE - 1 && g[y][x + 1] === val) ||
-          (y < SIZE - 1 && g[y + 1][x] === val)
-        )
-          return true;
+  const moveTiles = (
+    tiles: Tile[],
+    direction: "up" | "down" | "left" | "right"
+  ): [Tile[], boolean, number] => {
+    let moved = false;
+    let newScore = score;
+    const newTiles = [...tiles];
+    const sortedTiles = [...tiles].sort((a, b) => {
+      if (direction === "up") return a.y - b.y;
+      if (direction === "down") return b.y - a.y;
+      if (direction === "left") return a.x - b.x;
+      return b.x - a.x;
+    });
+
+    const merged: number[] = [];
+    for (let i = 0; i < GRID_SIZE; i++) {
+      let line: Tile[] = [];
+      if (direction === "up" || direction === "down") {
+        line = sortedTiles.filter((tile) => tile.x === i);
+        if (direction === "down") line.reverse();
+      } else {
+        line = sortedTiles.filter((tile) => tile.y === i);
+        if (direction === "right") line.reverse();
       }
+
+      let newLine: Tile[] = [];
+      let pos = 0;
+      for (let j = 0; j < line.length; j++) {
+        if (
+          j < line.length - 1 &&
+          line[j].value === line[j + 1].value &&
+          !merged.includes(line[j].id) &&
+          !merged.includes(line[j + 1].id)
+        ) {
+          const newValue = line[j].value * 2;
+          newLine.push({
+            ...line[j],
+            value: newValue,
+            x: direction === "up" || direction === "down" ? i : pos,
+            y: direction === "left" || direction === "right" ? i : pos,
+          });
+          merged.push(line[j].id, line[j + 1].id);
+          newScore += newValue;
+          j++;
+          pos++;
+          moved = true;
+        } else {
+          newLine.push({
+            ...line[j],
+            x: direction === "up" || direction === "down" ? i : pos,
+            y: direction === "left" || direction === "right" ? i : pos,
+          });
+          pos++;
+          if (
+            (direction === "up" && line[j].y !== pos - 1) ||
+            (direction === "down" && line[j].y !== GRID_SIZE - pos) ||
+            (direction === "left" && line[j].x !== pos - 1) ||
+            (direction === "right" && line[j].x !== GRID_SIZE - pos)
+          ) {
+            moved = true;
+          }
+        }
+      }
+
+      newLine.forEach((tile) => {
+        const index = newTiles.findIndex((t) => t.id === tile.id);
+        if (index !== -1) newTiles[index] = tile;
+      });
+    }
+
+    return [newTiles, moved, newScore];
+  };
+
+  const canMove = (tiles: Tile[]): boolean => {
+    if (tiles.length < GRID_SIZE * GRID_SIZE) return true;
+    for (const tile of tiles) {
+      const neighbors = [
+        { x: tile.x + 1, y: tile.y },
+        { x: tile.x - 1, y: tile.y },
+        { x: tile.x, y: tile.y + 1 },
+        { x: tile.x, y: tile.y - 1 },
+      ];
+      for (const { x, y } of neighbors) {
+        if (x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE) {
+          const neighbor = tiles.find((t) => t.x === x && t.y === y);
+          if (!neighbor || neighbor.value === tile.value) return true;
+        }
+      }
+    }
     return false;
   };
 
-  /* ───────── handle move ───────── */
-  const handleMove = (dir: "up" | "down" | "left" | "right") => {
-    const grid = gridFromTiles(tiles);
-    const { grid: nGrid, moved, add } = slide(grid, dir);
-    if (!moved) return;
-
-    const newTiles: Tile[] = [];
-    nGrid.forEach((row, y) =>
-      row.forEach((v, x) => {
-        if (v !== 0) newTiles.push({ id: Date.now() + Math.random(), value: v, x, y, merged: false });
-      })
-    );
-
-    addRandomTileToGrid(nGrid, newTiles);
-    setTiles(newTiles);
-    setScore((s) => s + add);
-    if (newTiles.some((t) => t.value === 2048) && !won) {
-      setWon(true);
-      confetti({ particleCount: 200, spread: 100, origin: { y: 0.6 } });
-    }
-    if (!anyMovesLeft(nGrid)) setGameOver(true);
-  };
-
-  /* ───────── key + swipe listeners ───────── */
-  useEffect(() => {
-    initBoard();
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (gameOver) return;
-      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key))
-        e.preventDefault();
-      if (e.key === "ArrowUp") handleMove("up");
-      if (e.key === "ArrowDown") handleMove("down");
-      if (e.key === "ArrowLeft") handleMove("left");
-      if (e.key === "ArrowRight") handleMove("right");
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-
-  const swipe = useSwipeable({
-    onSwipedUp: () => handleMove("up"),
-    onSwipedDown: () => handleMove("down"),
-    onSwipedLeft: () => handleMove("left"),
-    onSwipedRight: () => handleMove("right"),
-    trackTouch: true,
-  });
-
-  /* ───────── upload to IRYS ───────── */
   const uploadScore = async () => {
-    if (!isConnected || !address || !window.ethereum) {
-      toast.error("Connect wallet first");
+    if (!address || !walletClient) {
+      toast.error("Please connect your wallet");
       return;
     }
-    const id = toast.loading("Uploading…");
+
     try {
-      const provider = new BrowserProvider(window.ethereum);
-      const uploader = await WebUploader(WebEthereum).withAdapter(
-        EthersV6Adapter(provider)
+      const irysUploader = await Uploader(Ethereum).withWallet(
+        walletClient.account.privateKey
       );
-      await uploader.upload(
-        JSON.stringify({ address, score, timestamp: Date.now() }),
-        { tags: [{ name: "App", value: "IRYS-2048" }, { name: "Type", value: "Score" }] }
-      );
-      toast.update(id, { render: "Score uploaded", type: "success", isLoading: false, autoClose: 3000 });
-    } catch (err) {
-      toast.update(id, { render: "Upload failed", type: "error", isLoading: false, autoClose: 3000 });
-      console.error(err);
+      const irys = await irysUploader.withRpc(process.env.NEXT_PUBLIC_IRYS_NODE);
+
+      const scoreObj = {
+        address,
+        score,
+        timestamp: Date.now(),
+      };
+
+      await irys.upload(JSON.stringify(scoreObj), {
+        tags: [
+          { name: "App", value: "IRYS-2048" },
+          { name: "Type", value: "Score" },
+        ],
+      });
+
+      toast.success("Score uploaded!");
+    } catch (error) {
+      toast.error("Failed to upload score");
+      console.error(error);
     }
   };
 
-  /* ───────── render ───────── */
   return (
-    <div
-      className={`relative min-h-screen w-full flex flex-col items-center justify-center p-4 transition-colors ${
-        dark ? "bg-gray-900" : "bg-gray-50"
-      }`}
-    >
-      <button
-        onClick={() => setDark(!dark)}
-        className="absolute top-4 left-4 bg-gray-600 text-white px-3 py-1 rounded text-sm shadow"
-      >
-        {dark ? "Light Mode" : "Dark Mode"}
-      </button>
-
-      <Image src="/logo.png" alt="logo" width={200} height={50} className="mb-6" />
-
+    <div className="relative min-h-screen w-full flex flex-col items-center justify-center p-4">
+      <Image
+        src="/logo.png"
+        alt="IRYS 2048 Logo"
+        width={200}
+        height={50}
+        className="mb-8"
+      />
       <AnimatePresence>
         {!gameOver ? (
           <motion.div
-            key="board"
-            {...swipe}
-            className="relative w-full max-w-md aspect-square bg-gray-800 rounded-2xl p-4 overflow-hidden"
+            key="game"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.4 }}
+            transition={{ duration: 0.5, ease: "easeInOut" }}
+            className="relative w-full max-w-md aspect-square bg-gray-800 rounded-2xl p-4"
           >
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white select-none">
+            <div className="absolute top-4 left-4 text-white">
               Score: {score}
             </div>
-
-            <Link href="/leaderboard" className="absolute top-4 right-4 text-white underline">
+            <Link
+              href="/leaderboard"
+              className="absolute top-4 right-4 text-white underline"
+            >
               Leaderboard
             </Link>
-
-            {/* board grid */}
             <div className="grid grid-cols-4 gap-2 w-full h-full">
-              {Array.from({ length: SIZE * SIZE }).map((_, i) => (
-                <div key={i} className="bg-gray-700 rounded-lg" style={{ aspectRatio: "1/1" }} />
+              {Array.from({ length: GRID_SIZE * GRID_SIZE }).map((_, i) => (
+                <div
+                  key={i}
+                  className="bg-gray-700 rounded-lg"
+                  style={{ aspectRatio: "1 / 1" }}
+                />
               ))}
-
-              {tiles.map((t) => (
+              {tiles.map((tile) => (
                 <motion.div
-                  key={t.id}
-                  className={`absolute rounded-lg flex items-center justify-center font-bold text-xl ${
-                    tileColors[t.value] || "bg-gray-500 text-white"
-                  }`}
+                  key={tile.id}
+                  className="absolute bg-gray-600 rounded-lg flex items-center justify-center text-white text-2xl font-bold"
                   style={{
-                    width: `${100 / SIZE}%`,
-                    height: `${100 / SIZE}%`,
-                    left: `${(t.x * 100) / SIZE}%`,
-                    top: `${(t.y * 100) / SIZE}%`,
+                    width: `${100 / GRID_SIZE}%`,
+                    height: `${100 / GRID_SIZE}%`,
+                    left: `${(tile.x * 100) / GRID_SIZE}%`,
+                    top: `${(tile.y * 100) / GRID_SIZE}%`,
                   }}
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ duration: 0.2 }}
+                  initial={{ scale: 0, translateZ: 0 }}
+                  animate={{
+                    scale: 1,
+                    translateZ: 10,
+                    boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)",
+                  }}
+                  transition={{ duration: 0.3, ease: "easeInOut" }}
                 >
-                  {t.value}
+                  {tile.value}
                 </motion.div>
               ))}
             </div>
           </motion.div>
         ) : (
           <motion.div
-            key="over"
-            className="flex flex-col items-center gap-4"
+            key="game-over"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.4 }}
+            transition={{ duration: 0.5, ease: "easeInOut" }}
+            className="flex flex-col items-center gap-4"
           >
             <h2 className="text-2xl text-white">Game Over!</h2>
-            <p className="text-lg text-white">Score: {score}</p>
+            <p className="text-xl text-white">Score: {score}</p>
             <button
               onClick={uploadScore}
-              className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-2xl shadow"
+              className="bg-gradient-to-r from-irys-gradientFrom to-irys-gradientTo text-white px-6 py-3 rounded-2xl shadow-lg text-lg"
             >
               Upload Score
             </button>
             <button
-              onClick={initBoard}
-              className="bg-gray-600 text-white px-6 py-3 rounded-2xl shadow"
+              onClick={initializeBoard}
+              className="bg-gray-600 text-white px-6 py-3 rounded-2xl shadow-lg"
             >
-              New Game
+              Play New Game
             </button>
           </motion.div>
         )}
       </AnimatePresence>
-      <Image src="/sprite.png" alt="sprite" width={90} height={90} className="absolute bottom-0 left-0" />
-      <Image src="/sprite.png" alt="sprite" width={90} height={90} className="absolute bottom-0 right-0 scale-x-[-1]" />
+      <Image
+        src="/sprite.png"
+        alt="Sprite"
+        width={100}
+        height={100}
+        className="absolute bottom-0 left-0"
+      />
+      <Image
+        src="/sprite.png"
+        alt="Sprite"
+        width={100}
+        height={100}
+        className="absolute bottom-0 right-0 scale-x-[-1]"
+      />
     </div>
   );
 }
