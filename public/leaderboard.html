@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IRYS 2048 - Leaderboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4">
+  <img src="/logo.png" alt="IRYS 2048 Logo" width="200" height="50" class="mb-8" />
+  <div class="w-full max-w-4xl bg-gray-800 rounded-2xl p-6 shadow-xl">
+    <h1 class="text-2xl font-bold mb-4">Leaderboard</h1>
+    <p id="leaderboard-status" class="mb-4 text-gray-400">Loading leaderboard... (Feature coming soon)</p>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-gray-600">
+          <th class="p-2 text-left font-semibold">Rank</th>
+          <th class="p-2 text-left font-semibold">Address</th>
+          <th class="p-2 text-left font-semibold">Score</th>
+          <th class="p-2 text-left font-semibold">Date</th>
+        </tr>
+      </thead>
+      <tbody id="leaderboard-table">
+        <tr><td colspan="4" class="p-2 text-center text-gray-500">No scores available yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <img src="/sprite.png" alt="Sprite" width="100" height="100" class="absolute bottom-0 left-0" />
+  <img src="/sprite.png" alt="Sprite" width="100" height="100" class="absolute bottom-0 right-0 scale-x-[-1]" />
+  <script>
+    // Placeholder for GraphQL fetch (to be implemented)
+    // const url = 'https://testnet-rpc.irys.xyz/graphql';
+    // fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '{ transaction(limit: 10, tags: [{ name: "App", value: "IRYS-2048" }]) { edges { node { tags { name, value } } } } }' }) })
+    //   .then(response => response.json())
+    //   .then(data => console.log(data))
+    //   .catch(error => document.getElementById('leaderboard-status').textContent = 'Error loading leaderboard');
+  </script>
+</body>
+</html>
