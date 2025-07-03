@@ -13,6 +13,7 @@
   "dependencies": {
     "@irys/sdk": "^0.2.11",
     "@irys/upload-ethereum": "^0.0.2",
+    "@irys/upload": "^0.0.2",
     "@irys/web-upload": "^0.0.15",
     "@irys/web-upload-ethereum": "^0.0.16",
     "@irys/web-upload-ethereum-ethers-v6": "^0.0.16",
