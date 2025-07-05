@@ -1,223 +1,171 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IRYS 2048 - Game</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    #game-container {
-      position: relative;
-    }
-    #game-grid div {
-      position: relative;
-    }
-    .tile {
-      transition: all 0.2s ease-in-out;
-    }
-    .game-over {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.75);
-      z-index: 10;
-    }
-    .button-disabled {
-      opacity: 0.5;
-      pointer-events: none;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>IRYS 2048 – Stand‑alone</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--gap:0.75rem}
+  body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+       min-height:100vh;background:#111;color:#fff;font-family:system-ui,sans-serif;user-select:none}
+  #board{position:relative;width:92vmin;max-width:420px;aspect-ratio:1;background:#bbada0;border-radius:10px;padding:1rem}
+  .cell-bg{background:#ccc0b3;border-radius:6px;width:100%;aspect-ratio:1}
+  .tile{position:absolute;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .tile span{transform:scale(1.1)}
+  #overlay{position:absolute;inset:0;background:#000a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem}
+  button{padding:.6rem 1.2rem;border:0;border-radius:6px;font-weight:600;cursor:pointer}
+  .btn-purple{background:#7e3ff2;color:#fff}
+  .btn-gray{background:#ddd;color:#000}
+  #score{margin:.5rem 0;font-size:1.25rem;font-weight:600}
+  /* tile colors */
+  .v2  {background:#eee4da;color:#776e65}
+  .v4  {background:#ede0c8;color:#776e65}
+  .v8  {background:#f2b179}
+  .v16 {background:#f59563}
+  .v32 {background:#f67c5f}
+  .v64 {background:#f65e3b}
+  .v128{background:#edcf72}
+  .v256{background:#edcc61}
+  .v512{background:#edc850}
+  .v1024{background:#edc53f}
+  .v2048{background:#edc22e}
+</style>
 </head>
-<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4">
-  <img src="/logo.png" alt="IRYS 2048 Logo" width="200" height="50" class="mb-8" />
-  <div id="game-container" class="relative w-full max-w-md aspect-square bg-gray-800 rounded-2xl p-4 shadow-lg">
-    <div id="score" class="absolute top-4 left-4 text-white text-lg font-bold">
-      Score: <span id="score-value">0</span>
-    </div>
-    <a href="/leaderboard" class="absolute top-4 right-4 text-white underline text-lg hover:text-gray-300">Leaderboard</a>
-    <div id="game-grid" class="grid grid-cols-4 gap-2 w-full h-full"></div>
-  </div>
-  <img src="/sprite.png" alt="Sprite" width="100" height="100" class="absolute bottom-0 left-0" />
-  <img src="/sprite.png" alt="Sprite" width="100" height="100" class="absolute bottom-0 right-0 scale-x-[-1]" />
+<body>
+  <img src="logo.png" alt="Logo" style="width:180px;margin-bottom:8px">
+  <div id="score">0</div>
 
-  <script>
-    const GRID_SIZE = 4;
-    let tiles = [];
-    let score = 0;
-    let gameOver = false;
+  <div id="board"></div>
 
-    function initializeBoard() {
-      tiles = [];
-      score = 0;
-      gameOver = false;
-      document.getElementById('score-value').textContent = score;
-      for (let i = 0; i < 2; i++) addRandomTile();
-      updateGrid();
-    }
+  <a href="leaderboard.html" style="margin-top:1rem;color:#8ab4ff">Leaderboard</a>
 
-    function addRandomTile() {
-      const available = [];
-      for (let y = 0; y < GRID_SIZE; y++) {
-        for (let x = 0; x < GRID_SIZE; x++) {
-          if (!tiles.some(t => t.x === x && t.y === y)) available.push({ x, y });
-        }
-      }
-      if (available.length > 0) {
-        const { x, y } = available[Math.floor(Math.random() * available.length)];
-        tiles.push({ id: Date.now() + Math.random(), value: Math.random() < 0.9 ? 2 : 4, x, y });
-        updateGrid();
-      }
-    }
+  <img src="sprite.png" style="position:fixed;bottom:8px;left:8px;width:80px">
+  <img src="sprite.png" style="position:fixed;bottom:8px;right:8px;width:80px;transform:scaleX(-1)">
 
-    function updateGrid() {
-      const grid = document.getElementById('game-grid');
-      grid.innerHTML = '';
-      for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
-        const div = document.createElement('div');
-        div.className = 'bg-gray-700 rounded-lg';
-        div.style.aspectRatio = '1 / 1';
-        grid.appendChild(div);
-      }
-      tiles.forEach(tile => {
-        const div = document.createElement('div');
-        div.textContent = tile.value;
-        div.className = `tile absolute bg-gray-600 rounded-lg flex items-center justify-center text-white text-2xl font-bold ${tile.value >= 1024 ? 'text-yellow-300' : ''}`;
-        div.style.width = `${100 / GRID_SIZE}%`;
-        div.style.height = `${100 / GRID_SIZE}%`;
-        div.style.left = `${(tile.x * 100) / GRID_SIZE}%`;
-        div.style.top = `${(tile.y * 100) / GRID_SIZE}%`;
-        grid.appendChild(div);
-      });
-    }
+<!-- =====  Main Game Script  ===== -->
+<script type="module">
+import confetti from "https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/+esm";
+import { BrowserProvider } from "https://cdn.jsdelivr.net/npm/ethers@6.7.0/+esm";
+import { WebUploader } from "https://esm.sh/@irys/web-upload";
+import { WebEthereum } from "https://esm.sh/@irys/web-upload-ethereum";
+import { EthersV6Adapter } from "https://esm.sh/@irys/web-upload-ethereum-ethers-v6";
+import Hammer from "https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js";
 
-    function moveTiles(direction) {
-      if (gameOver) return;
-      let moved = false;
-      let newScore = score;
-      const newTiles = [...tiles];
-      const sortedTiles = [...tiles].sort((a, b) => {
-        if (direction === 'up') return a.y - b.y;
-        if (direction === 'down') return b.y - a.y;
-        if (direction === 'left') return a.x - b.x;
-        return b.x - a.x;
-      });
+const N = 4, P4 = 0.1, board = document.querySelector('#board'),
+      scoreEl = document.querySelector('#score');
+let grid, score = 0, over = false;
 
-      const merged = [];
-      for (let i = 0; i < GRID_SIZE; i++) {
-        let line = [];
-        if (direction === 'up' || direction === 'down') {
-          line = sortedTiles.filter(t => t.x === i);
-          if (direction === 'down') line.reverse();
-        } else {
-          line = sortedTiles.filter(t => t.y === i);
-          if (direction === 'right') line.reverse();
-        }
+/* create background cells */
+board.style.display="grid";
+board.style.gridTemplate=`repeat(${N},1fr)/repeat(${N},1fr)`;
+board.style.gap="var(--gap)";
+[...Array(N*N)].forEach(()=>board.append(Object.assign(document.createElement('div'),{className:'cell-bg'})));
 
-        let newLine = [];
-        let pos = 0;
-        for (let j = 0; j < line.length; j++) {
-          if (j < line.length - 1 && line[j].value === line[j + 1].value && !merged.includes(line[j].id) && !merged.includes(line[j + 1].id)) {
-            const newValue = line[j].value * 2;
-            newLine.push({ ...line[j], value: newValue, x: direction === 'up' || direction === 'down' ? i : pos, y: direction === 'left' || direction === 'right' ? i : pos });
-            merged.push(line[j].id, line[j + 1].id);
-            newScore += newValue;
-            j++;
-            pos++;
-            moved = true;
-          } else {
-            newLine.push({ ...line[j], x: direction === 'up' || direction === 'down' ? i : pos, y: direction === 'left' || direction === 'right' ? i : pos });
-            pos++;
-          }
-        }
-        newLine.forEach(t => {
-          const index = newTiles.findIndex(tt => tt.id === t.id);
-          if (index !== -1) newTiles[index] = t;
-        });
-      }
+/* utilities */
+const blank =()=>Array.from({length:N},()=>Array(N).fill(0));
+const free =(g)=>g.flatMap((v,i)=>v?[]:[{x:i%N,y:~~(i/N)}]);
+const addRandom = g=>{
+  const f=free(g);if(!f.length)return;
+  const {x,y}=f[Math.random()*f.length|0];
+  g[y][x]=Math.random()<P4?4:2;
+};
+const updateCells =()=>{
+  document.querySelectorAll('.tile').forEach(t=>t.remove());
+  grid.forEach((row,y)=>
+    row.forEach((v,x)=>{
+      if(!v)return;
+      const tile=document.createElement('div');
+      tile.className=`tile v${v}`;
+      tile.style.width=tile.style.height=`calc((100% - 3*var(--gap))/4)`;
+      tile.style.left=`calc(${x} * (100%/4) + ${x} * var(--gap))`;
+      tile.style.top =`calc(${y} * (100%/4) + ${y} * var(--gap))`;
+      tile.style.transition=".15s";
+      tile.innerHTML=`<span>${v}</span>`;
+      board.append(tile);
+    })
+  );
+  scoreEl.textContent=score;
+};
 
-      if (moved) {
-        tiles = [...newTiles, addRandomTile()];
-        score = newScore;
-        document.getElementById('score-value').textContent = score;
-        if (!canMove()) {
-          gameOver = true;
-          showGameOver();
-        }
-      }
-    }
+/* rotate and movement */
+const rot = m=>m[0].map((_,i)=>m.map(r=>r[i]).reverse());
+const canMove = g=>g.some((r,y)=>r.some((v,x)=>!v||(x+1<N&&v===r[x+1])||(y+1<N&&v===g[y+1][x])));
+const slide = dir=>{
+ if(over) return;
+ const t = {u:0,r:1,d:2,l:3}[dir];
+ let m=structuredClone(grid);for(let i=0;i<t;i++)m=rot(m);
+ let moved=false, add=0;
+ m.forEach(r=>{
+  const row=r.filter(Boolean);
+  for(let i=0;i<row.length-1;i++)
+   if(row[i]===row[i+1]){row[i]*=2;add+=row[i];row.splice(i+1,1);}
+  while(row.length<N)row.push(0);
+  if(!r.every((v,i)=>v===row[i]))moved=true;
+  r.splice(0,N,...row);
+ });
+ for(let i=0;i<(4-t)%4;i++)m=rot(m);
+ if(!moved) return;
+ addRandom(m);grid=m;score+=add;updateCells();
+ if(m.flat().includes(2048)) confetti({particleCount:170,spread:90,origin:{y:.6}});
+ if(!canMove(m)){over=true;showOverlay();}
+};
 
-    function canMove() {
-      if (tiles.length < GRID_SIZE * GRID_SIZE) return true;
-      for (const tile of tiles) {
-        const neighbors = [{ x: tile.x + 1, y: tile.y }, { x: tile.x - 1, y: tile.y }, { x: tile.x, y: tile.y + 1 }, { x: tile.x, y: tile.y - 1 }];
-        for (const { x, y } of neighbors) {
-          if (x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE) {
-            const neighbor = tiles.find(t => t.x === x && t.y === y);
-            if (!neighbor || neighbor.value === tile.value) return true;
-          }
-        }
-      }
-      return false;
-    }
+const showOverlay = ()=>{
+ const ov=document.createElement('div');ov.id='overlay';
+ ov.innerHTML=`<h2 style="font-size:28px;margin:0">Game Over</h2>
+   <button class="btn-purple">Upload Score</button>
+   <button class="btn-gray">New Game</button>`;
+ board.append(ov);
+ ov.querySelector(".btn-gray").onclick=init;
+ ov.querySelector(".btn-purple").onclick=upload;
+};
 
-    function showGameOver() {
-      const gameOverDiv = document.createElement('div');
-      gameOverDiv.className = 'game-over flex items-center justify-center';
-      gameOverDiv.innerHTML = `
-        <div class='flex flex-col items-center gap-4 bg-gray-800 p-6 rounded-2xl shadow-lg'>
-          <h2 class='text-2xl font-bold'>Game Over!</h2>
-          <p class='text-xl'>Score: ${score}</p>
-          <button id="upload-score" class='bg-purple-600 text-white px-6 py-3 rounded-2xl shadow-lg hover:bg-purple-700 transition-colors ${!window.ethereum ? 'button-disabled' : ''}'>
-            Upload Score
-          </button>
-          <button id="new-game" class='bg-gray-600 text-white px-6 py-3 rounded-2xl shadow-lg hover:bg-gray-700 transition-colors'>
-            New Game
-          </button>
-        </div>
-      `;
-      document.body.appendChild(gameOverDiv);
-      document.getElementById('upload-score').addEventListener('click', uploadScore);
-      document.getElementById('new-game').addEventListener('click', () => {
-        document.body.removeChild(gameOverDiv);
-        gameOver = false;
-        initializeBoard();
-      });
-    }
+/* IRYS upload with forced testnet */
+const IRYS_CHAIN_ID_DEC = 1270;
+const IRYS_CHAIN_ID_HEX = "0x4F6";
+const IRYS_RPC = "https://testnet-rpc.irys.xyz/v1/execution-rpc";
 
-    async function uploadScore() {
-      if (!window.wagmiConfig || !window.ethereum) {
-        alert('Please install MetaMask and refresh to connect your wallet.');
-        return;
-      }
-      try {
-        const provider = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        const { WebUploader, WebEthereum } = window;
-        const uploader = await new WebUploader(WebEthereum).withProvider(provider);
-        await uploader.upload(JSON.stringify({ address: provider[0], score, timestamp: Date.now() }), {
-          tags: [{ name: "App", value: "IRYS-2048" }, { name: "Type", value: "Score" }],
-          url: 'https://testnet-rpc.irys.xyz'
-        });
-        alert('Score uploaded successfully!');
-      } catch (error) {
-        alert('Failed to upload score: ' + error.message);
-        console.error(error);
-      }
-    }
+async function upload(){
+  if(!window.ethereum){alert("Connect wallet");return;}
+  // 1. ensure chain
+  const current = await window.ethereum.request({method:"eth_chainId"});
+  if(current !== IRYS_CHAIN_ID_HEX){
+    try{
+      await window.ethereum.request({method:"wallet_switchEthereumChain",params:[{chainId:IRYS_CHAIN_ID_HEX}]});
+      alert("Switched to IRYS testnet");
+    }catch(e){alert("Please switch to IRYS testnet manually");return;}
+  }
+  try{
+    const provider = new BrowserProvider(window.ethereum);
+    const uploader = await WebUploader(WebEthereum)
+      .withAdapter(EthersV6Adapter(provider))
+      .withRpc(IRYS_RPC);                       // 🔒 force testnet RPC
+    await uploader.upload(
+      JSON.stringify({address:(await provider.getSigner()).address,score,timestamp:Date.now()}),
+      {tags:[{name:"App",value:"IRYS-2048"},{name:"Type",value:"Score"}]}
+    );
+    alert("Score uploaded!");
+  }catch(e){alert("Upload failed: "+e.message);}
+}
 
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowUp') moveTiles('up');
-      else if (e.key === 'ArrowDown') moveTiles('down');
-      else if (e.key === 'ArrowLeft') moveTiles('left');
-      else if (e.key === 'ArrowRight') moveTiles('right');
-    });
+/* new game */
+function init(){
+  score=0;over=false;grid=blank();addRandom(grid);addRandom(grid);updateCells();
+  const old=document.getElementById('overlay');if(old)old.remove();
+}
+init();
 
-    initializeBoard();
-  </script>
-  <script type="module" src="/providers.js"></script>
-  <script type="module">
-    import { WebUploader } from 'https://unpkg.com/@irys/web-upload@0.0.2/dist/index.js';
-    import { WebEthereum } from 'https://unpkg.com/@irys/web-upload-ethereum@0.0.2/dist/index.js';
-    window.WebUploader = WebUploader;
-    window.WebEthereum = WebEthereum;
-  </script>
+/* controls */
+addEventListener('keydown',e=>{
+  const map={ArrowLeft:'l',ArrowRight:'r',ArrowUp:'u',ArrowDown:'d'};
+  if(map[e.key]){e.preventDefault();slide(map[e.key]);}
+});
+const hammer=new Hammer(board);
+hammer.get('swipe').set({direction:Hammer.DIRECTION_ALL});
+hammer.on('swipeleft', ()=>slide('l'));
+hammer.on('swiperight',()=>slide('r'));
+hammer.on('swipeup',   ()=>slide('u'));
+hammer.on('swipedown', ()=>slide('d'));
+</script>
 </body>
 </html>
