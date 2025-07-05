@@ -2,47 +2,40 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>IRYS 2048 – Stand‑alone</title>
+<title>IRYS 2048 – Perfect Standalone</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  :root{--gap:0.75rem}
-  body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
-       min-height:100vh;background:#111;color:#fff;font-family:system-ui,sans-serif;user-select:none}
-  #board{position:relative;width:92vmin;max-width:420px;aspect-ratio:1;background:#bbada0;border-radius:10px;padding:1rem}
-  .cell-bg{background:#ccc0b3;border-radius:6px;width:100%;aspect-ratio:1}
-  .tile{position:absolute;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700}
-  .tile span{transform:scale(1.1)}
-  #overlay{position:absolute;inset:0;background:#000a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem}
-  button{padding:.6rem 1.2rem;border:0;border-radius:6px;font-weight:600;cursor:pointer}
-  .btn-purple{background:#7e3ff2;color:#fff}
-  .btn-gray{background:#ddd;color:#000}
-  #score{margin:.5rem 0;font-size:1.25rem;font-weight:600}
-  /* tile colors */
-  .v2  {background:#eee4da;color:#776e65}
-  .v4  {background:#ede0c8;color:#776e65}
-  .v8  {background:#f2b179}
-  .v16 {background:#f59563}
-  .v32 {background:#f67c5f}
-  .v64 {background:#f65e3b}
-  .v128{background:#edcf72}
-  .v256{background:#edcc61}
-  .v512{background:#edc850}
-  .v1024{background:#edc53f}
-  .v2048{background:#edc22e}
+:root{--gap:.75rem;--bg:#bbada0;--cell:#ccc0b3}
+body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+     min-height:100vh;background:#111;color:#fff;font-family:"Segoe UI",system-ui,sans-serif}
+#board{position:relative;width:92vmin;max-width:420px;aspect-ratio:1;
+       background:var(--bg);border-radius:10px;padding:1rem;overflow:hidden}
+.grid{display:grid;grid-template:repeat(4,1fr)/repeat(4,1fr);gap:var(--gap);width:100%;height:100%}
+.cell-bg{background:var(--cell);border-radius:6px;width:100%;aspect-ratio:1}
+.tile{position:absolute;border-radius:6px;display:flex;align-items:center;justify-content:center;
+      font-weight:700;font-size:clamp(1.3rem,4vmin,2.6rem);transition:transform .18s}
+#overlay{position:absolute;inset:0;background:#000a;display:flex;flex-direction:column;
+         align-items:center;justify-content:center;gap:1rem;backdrop-filter:blur(2px)}
+button{padding:.6rem 1.3rem;border:0;border-radius:6px;font-weight:600;cursor:pointer}
+.btn-main{background:#7e3ff2;color:#fff}
+.btn-gray{background:#ddd;color:#000}
+#score{margin:.6rem 0;font-size:1.3rem;font-weight:600}
+.v2{background:#eee4da;color:#776e65}.v4{background:#ede0c8;color:#776e65}
+.v8{background:#f2b179}.v16{background:#f59563}.v32{background:#f67c5f}.v64{background:#f65e3b}
+.v128{background:#edcf72}.v256{background:#edcc61}.v512{background:#edc850}
+.v1024{background:#edc53f}.v2048{background:#edc22e}
 </style>
 </head>
 <body>
-  <img src="logo.png" alt="Logo" style="width:180px;margin-bottom:8px">
+  <img src="logo.png" alt="logo" style="width:180px;margin-bottom:8px">
   <div id="score">0</div>
-
-  <div id="board"></div>
-
+  <div id="board">
+    <div class="grid" id="grid-bg"></div>
+  </div>
   <a href="leaderboard.html" style="margin-top:1rem;color:#8ab4ff">Leaderboard</a>
-
   <img src="sprite.png" style="position:fixed;bottom:8px;left:8px;width:80px">
   <img src="sprite.png" style="position:fixed;bottom:8px;right:8px;width:80px;transform:scaleX(-1)">
 
-<!-- =====  Main Game Script  ===== -->
 <script type="module">
 import confetti from "https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/+esm";
 import { BrowserProvider } from "https://cdn.jsdelivr.net/npm/ethers@6.7.0/+esm";
@@ -51,121 +44,111 @@ import { WebEthereum } from "https://esm.sh/@irys/web-upload-ethereum";
 import { EthersV6Adapter } from "https://esm.sh/@irys/web-upload-ethereum-ethers-v6";
 import Hammer from "https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js";
 
-const N = 4, P4 = 0.1, board = document.querySelector('#board'),
-      scoreEl = document.querySelector('#score');
-let grid, score = 0, over = false;
+/* ========== constants ========== */
+const N=4, PROB4=.1, CHAIN_ID_HEX="0x4F6", IRYS_RPC="https://testnet-rpc.irys.xyz/v1/execution-rpc";
+const board=document.getElementById("board"), gridBg=document.getElementById("grid-bg"), scoreEl=document.getElementById("score");
 
-/* create background cells */
-board.style.display="grid";
-board.style.gridTemplate=`repeat(${N},1fr)/repeat(${N},1fr)`;
-board.style.gap="var(--gap)";
-[...Array(N*N)].forEach(()=>board.append(Object.assign(document.createElement('div'),{className:'cell-bg'})));
+/* background cells */
+[...Array(N*N)].forEach(()=>gridBg.append(Object.assign(document.createElement("div"),{className:"cell-bg"})));
 
-/* utilities */
-const blank =()=>Array.from({length:N},()=>Array(N).fill(0));
-const free =(g)=>g.flatMap((v,i)=>v?[]:[{x:i%N,y:~~(i/N)}]);
-const addRandom = g=>{
-  const f=free(g);if(!f.length)return;
-  const {x,y}=f[Math.random()*f.length|0];
-  g[y][x]=Math.random()<P4?4:2;
-};
-const updateCells =()=>{
-  document.querySelectorAll('.tile').forEach(t=>t.remove());
-  grid.forEach((row,y)=>
-    row.forEach((v,x)=>{
-      if(!v)return;
-      const tile=document.createElement('div');
-      tile.className=`tile v${v}`;
-      tile.style.width=tile.style.height=`calc((100% - 3*var(--gap))/4)`;
-      tile.style.left=`calc(${x} * (100%/4) + ${x} * var(--gap))`;
-      tile.style.top =`calc(${y} * (100%/4) + ${y} * var(--gap))`;
-      tile.style.transition=".15s";
-      tile.innerHTML=`<span>${v}</span>`;
-      board.append(tile);
-    })
-  );
+/* ========= game state ========= */
+let grid, cells=[], score=0, over=false, won=false;
+
+/* -------- helpers -------- */
+const blank=()=>Array.from({length:N},()=>Array(N).fill(0));
+const free=(g)=>g.flatMap((row,y)=>row.flatMap((v,x)=>v?[]:[{x,y}]));
+const addRand=g=>{const f=free(g);if(!f.length)return;const {x,y}=f[Math.random()*f.length|0];g[y][x]=Math.random()<PROB4?4:2;}
+const toCells=g=>g.flatMap((row,y)=>row.flatMap((v,x)=>v?[{id:Date.now()+Math.random(),v,x,y}]:[]));
+const canMove=g=>g.some((row,y)=>row.some((v,x)=>!v||(x+1<N&&v===row[x+1])||(y+1<N&&v===g[y+1][x])));
+
+/* render tiles */
+const render=()=>{
+  document.querySelectorAll(".tile").forEach(t=>t.remove());
+  cells.forEach(t=>{
+    const el=document.createElement("div");
+    el.className=`tile v${t.v}`;
+    const size="calc((100% - 3*var(--gap))/4)";
+    el.style.width=el.style.height=size;
+    el.style.transform=`translate(${t.x*100/(N)}%,${t.y*100/(N)}%)`;
+    el.innerHTML=`<span>${t.v}</span>`;
+    board.append(el);
+  });
   scoreEl.textContent=score;
 };
 
-/* rotate and movement */
-const rot = m=>m[0].map((_,i)=>m.map(r=>r[i]).reverse());
-const canMove = g=>g.some((r,y)=>r.some((v,x)=>!v||(x+1<N&&v===r[x+1])||(y+1<N&&v===g[y+1][x])));
-const slide = dir=>{
- if(over) return;
- const t = {u:0,r:1,d:2,l:3}[dir];
- let m=structuredClone(grid);for(let i=0;i<t;i++)m=rot(m);
- let moved=false, add=0;
- m.forEach(r=>{
-  const row=r.filter(Boolean);
-  for(let i=0;i<row.length-1;i++)
-   if(row[i]===row[i+1]){row[i]*=2;add+=row[i];row.splice(i+1,1);}
-  while(row.length<N)row.push(0);
-  if(!r.every((v,i)=>v===row[i]))moved=true;
-  r.splice(0,N,...row);
- });
- for(let i=0;i<(4-t)%4;i++)m=rot(m);
- if(!moved) return;
- addRandom(m);grid=m;score+=add;updateCells();
- if(m.flat().includes(2048)) confetti({particleCount:170,spread:90,origin:{y:.6}});
- if(!canMove(m)){over=true;showOverlay();}
+/* rotate helper */
+const rot=m=>m[0].map((_,i)=>m.map(r=>r[i]).reverse());
+
+/* slide */
+const slide=dir=>{
+  if(over)return;
+  const turns={u:0,r:1,d:2,l:3}[dir];
+  let g=structuredClone(grid);for(let i=0;i<turns;i++)g=rot(g);
+  let moved=false, add=0;
+  g.forEach(row=>{
+    const tight=row.filter(Boolean);
+    for(let i=0;i<tight.length-1;i++){
+      if(tight[i]===tight[i+1]){tight[i]*=2;add+=tight[i];tight.splice(i+1,1);}
+    }
+    while(tight.length<N)tight.push(0);
+    if(!row.every((v,i)=>v===tight[i]))moved=true;
+    row.splice(0,N,...tight);
+  });
+  for(let i=0;i<(4-turns)%4;i++)g=rot(g);
+  if(!moved)return;
+  addRand(g);
+  grid=g;cells=toCells(g);score+=add;render();
+  if(!won&&g.flat().includes(2048)){won=true;confetti({particleCount:200,spread:120,origin:{y:.6}});showOverlay("You Win!","Keep Going");return;}
+  if(!canMove(g)){over=true;showOverlay("Game Over","New Game");}
 };
 
-const showOverlay = ()=>{
- const ov=document.createElement('div');ov.id='overlay';
- ov.innerHTML=`<h2 style="font-size:28px;margin:0">Game Over</h2>
-   <button class="btn-purple">Upload Score</button>
-   <button class="btn-gray">New Game</button>`;
- board.append(ov);
- ov.querySelector(".btn-gray").onclick=init;
- ov.querySelector(".btn-purple").onclick=upload;
+/* overlay */
+const showOverlay=(text,btnText)=>{
+  const ov=document.createElement("div");ov.id="overlay";
+  ov.innerHTML=`<h2 style="font-size:28px;margin:0">${text}</h2>
+    <button id="btn-main" class="btn-main">${btnText}</button>
+    <button id="btn-upload" class="btn-gray">${over?"Upload Score":""}</button>`;
+  board.append(ov);
+  document.getElementById("btn-main").onclick=()=>{won=false;over=false;ov.remove();};
+  if(over)document.getElementById("btn-upload").onclick=upload;
 };
 
-/* IRYS upload with forced testnet */
-const IRYS_CHAIN_ID_DEC = 1270;
-const IRYS_CHAIN_ID_HEX = "0x4F6";
-const IRYS_RPC = "https://testnet-rpc.irys.xyz/v1/execution-rpc";
+/* -------- controls -------- */
+addEventListener("keydown",e=>{
+  const map={ArrowLeft:"l",ArrowRight:"r",ArrowUp:"u",ArrowDown:"d"};
+  if(map[e.key]){e.preventDefault();slide(map[e.key]);}
+});
+const hammer=new Hammer(board);hammer.get("swipe").set({direction:Hammer.DIRECTION_ALL});
+hammer.on("swipeleft",()=>slide("l"));
+hammer.on("swiperight",()=>slide("r"));
+hammer.on("swipeup",()=>slide("u"));
+hammer.on("swipedown",()=>slide("d"));
 
+/* -------- IRYS upload -------- */
 async function upload(){
   if(!window.ethereum){alert("Connect wallet");return;}
-  // 1. ensure chain
-  const current = await window.ethereum.request({method:"eth_chainId"});
-  if(current !== IRYS_CHAIN_ID_HEX){
+  const chain=await window.ethereum.request({method:"eth_chainId"});
+  if(chain!==CHAIN_ID_HEX){
     try{
-      await window.ethereum.request({method:"wallet_switchEthereumChain",params:[{chainId:IRYS_CHAIN_ID_HEX}]});
+      await window.ethereum.request({method:"wallet_switchEthereumChain",params:[{chainId:CHAIN_ID_HEX}]});
       alert("Switched to IRYS testnet");
-    }catch(e){alert("Please switch to IRYS testnet manually");return;}
+    }catch(e){alert("Switch to IRYS testnet first");return;}
   }
   try{
-    const provider = new BrowserProvider(window.ethereum);
-    const uploader = await WebUploader(WebEthereum)
-      .withAdapter(EthersV6Adapter(provider))
-      .withRpc(IRYS_RPC);                       // 🔒 force testnet RPC
-    await uploader.upload(
-      JSON.stringify({address:(await provider.getSigner()).address,score,timestamp:Date.now()}),
-      {tags:[{name:"App",value:"IRYS-2048"},{name:"Type",value:"Score"}]}
-    );
-    alert("Score uploaded!");
+    const provider=new BrowserProvider(window.ethereum);
+    const uploader=await WebUploader(WebEthereum).withAdapter(EthersV6Adapter(provider)).withRpc(IRYS_RPC);
+    await uploader.upload(JSON.stringify({address:(await provider.getSigner()).address,score,timestamp:Date.now()}),
+      {tags:[{name:"App",value:"IRYS-2048"},{name:"Type",value:"Score"}]});
+    alert("Uploaded!");
   }catch(e){alert("Upload failed: "+e.message);}
 }
 
-/* new game */
+/* -------- init -------- */
 function init(){
-  score=0;over=false;grid=blank();addRandom(grid);addRandom(grid);updateCells();
-  const old=document.getElementById('overlay');if(old)old.remove();
+  score=0;over=false;won=false;grid=blank();addRand(grid);addRand(grid);cells=toCells(grid);render();
+  const ov=document.getElementById("overlay");if(ov)ov.remove();
 }
 init();
-
-/* controls */
-addEventListener('keydown',e=>{
-  const map={ArrowLeft:'l',ArrowRight:'r',ArrowUp:'u',ArrowDown:'d'};
-  if(map[e.key]){e.preventDefault();slide(map[e.key]);}
-});
-const hammer=new Hammer(board);
-hammer.get('swipe').set({direction:Hammer.DIRECTION_ALL});
-hammer.on('swipeleft', ()=>slide('l'));
-hammer.on('swiperight',()=>slide('r'));
-hammer.on('swipeup',   ()=>slide('u'));
-hammer.on('swipedown', ()=>slide('d'));
 </script>
 </body>
 </html>
